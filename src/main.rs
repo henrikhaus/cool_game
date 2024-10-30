@@ -1,42 +1,72 @@
 extern crate sdl2;
+extern crate gl;
+
+mod renderer;
+mod game;
+mod renderer;
+mod game;
+mod utils;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::pixels::Color;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-pub fn main() -> Result<(), String> {
-    let sdl_context = sdl2::init()?;
-    let video_subsystem = sdl_context.video()?;
+fn main() {
+    // Initialize SDL2
+    let sdl_context = sdl2::init().expect("SDL2 initialization failed!");
+    let video_subsystem = sdl_context.video().expect("Couldn't initialize video subsystem.");
 
+    // Create an SDL2 window with OpenGL context
     let window = video_subsystem
-        .window("rust-sdl2 demo: Video", 800, 600)
-        .position_centered()
+        .window("3D Game", 800, 600)
         .opengl()
         .build()
-        .map_err(|e| e.to_string())?;
+        .expect("Failed to create a window");
 
-    let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
+    let _gl_context = window.gl_create_context().expect("Couldn't create GL context");
+    gl::load_with(|s| video_subsystem.gl_get_proc_address(s) as *const _);
 
-    canvas.set_draw_color(Color::RGB(255, 0, 0));
-    canvas.clear();
-    canvas.present();
+    // Set up the renderer
+    let mut renderer = renderer::Renderer::new();
 
-    let mut event_pump = sdl_context.event_pump()?;
+    // Set up the game state
+    let mut game = game::Game::new();
 
+    // Event pump for handling input events
+    let mut event_pump = sdl_context.event_pump().expect("Failed to get SDL event pump.");
+
+    let mut last_frame = Instant::now();
+
+    // Main game loop
     'running: loop {
+        let delta_time = last_frame.elapsed().as_secs_f32();
+        last_frame = Instant::now();
+
+        // Handle events
         for event in event_pump.poll_iter() {
             match event {
-                Event::Quit { .. }
-                | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => break 'running,
+                Event::Quit { .. } => break 'running,
+                Event::KeyDown { keycode: Some(Keycode::Escape), .. } => break 'running,
                 _ => {}
             }
         }
 
-        canvas.clear();
-        canvas.present();
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30)); // 30 FPS
-    }
+        // Update game state
+        game.update(delta_time);
 
-    Ok(())
+        // Clear the screen
+        renderer.clear();
+
+        // Render the game
+        renderer.render(&game);
+
+        // Swap buffers
+        window.gl_swap_window();
+
+        // Cap the frame rate
+        let frame_duration = Duration::new(0, 16_666_667); // Roughly 60 FPS
+        if Instant::now().duration_since(last_frame) < frame_duration {
+            std::thread::sleep(frame_duration - Instant::now().duration_since(last_frame));
+        }
+    }
 }
