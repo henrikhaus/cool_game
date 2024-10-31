@@ -3,8 +3,6 @@ extern crate gl;
 
 mod renderer;
 mod game;
-mod renderer;
-mod game;
 mod utils;
 
 use sdl2::event::Event;
