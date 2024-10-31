@@ -1,70 +1,71 @@
-extern crate sdl2;
-extern crate gl;
+mod renderer; // Import the renderer module
 
-mod renderer;
-mod game;
-mod utils;
-
+use renderer::Renderer; // Bring Renderer into scope
 use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use sdl2::sys::{SDL_SetRelativeMouseMode};
+use sdl2::sys::SDL_bool::SDL_TRUE;
 
 fn main() {
-    // Initialize SDL2
-    let sdl_context = sdl2::init().expect("SDL2 initialization failed!");
-    let video_subsystem = sdl_context.video().expect("Couldn't initialize video subsystem.");
-
-    // Create an SDL2 window with OpenGL context
+    let sdl = sdl2::init().unwrap();
+    let video_subsystem = sdl.video().unwrap();
     let window = video_subsystem
         .window("3D Game", 800, 600)
         .opengl()
+        .resizable()
         .build()
-        .expect("Failed to create a window");
+        .unwrap();
 
-    let _gl_context = window.gl_create_context().expect("Couldn't create GL context");
-    gl::load_with(|s| video_subsystem.gl_get_proc_address(s) as *const _);
+    let _gl_context = window.gl_create_context().unwrap();
+    gl::load_with(|s| video_subsystem.gl_get_proc_address(s) as _);
 
-    // Set up the renderer
-    let mut renderer = renderer::Renderer::new();
+    let (width, height) = window.drawable_size();
+    let aspect_ratio = width as f32 / height as f32;
+    let mut renderer = Renderer::new(aspect_ratio);
 
-    // Set up the game state
-    let mut game = game::Game::new();
+    let mut event_pump = sdl.event_pump().unwrap();
 
-    // Event pump for handling input events
-    let mut event_pump = sdl_context.event_pump().expect("Failed to get SDL event pump.");
+    unsafe {
+        SDL_SetRelativeMouseMode(SDL_TRUE);
+    }
 
-    let mut last_frame = Instant::now();
-
-    // Main game loop
     'running: loop {
-        let delta_time = last_frame.elapsed().as_secs_f32();
-        last_frame = Instant::now();
-
-        // Handle events
+        // Handle quit event
         for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. } => break 'running,
-                Event::KeyDown { keycode: Some(Keycode::Escape), .. } => break 'running,
-                _ => {}
+            if let Event::Quit { .. } = event {
+                break 'running;
+            }
+            // Capture mouse movement for rotation
+            if let Event::MouseMotion { xrel, yrel, .. } = event {
+                let xoffset = xrel as f32;
+                let yoffset = -yrel as f32; // Invert y to match typical camera rotation behavior
+                renderer.camera.rotate(xoffset, yoffset);
             }
         }
 
-        // Update game state
-        game.update(delta_time);
+        // Get the current state of the keyboard
+        let keyboard_state = event_pump.keyboard_state();
 
-        // Clear the screen
+        // Continuous movement based on key state
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::W) {
+            renderer.camera.move_forward();
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::S) {
+            renderer.camera.move_backward();
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::A) {
+            renderer.camera.strafe_left();
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::D) {
+            renderer.camera.strafe_right();
+        }
+
+        // Clear, render, and update the screen
         renderer.clear();
-
-        // Render the game
-        renderer.render(&game);
-
-        // Swap buffers
+        renderer.render();
         window.gl_swap_window();
 
-        // Cap the frame rate
-        let frame_duration = Duration::new(0, 16_666_667); // Roughly 60 FPS
-        if Instant::now().duration_since(last_frame) < frame_duration {
-            std::thread::sleep(frame_duration - Instant::now().duration_since(last_frame));
-        }
+        // Frame delay
+        std::thread::sleep(Duration::from_millis(16)); // ~60 FPS
     }
 }
